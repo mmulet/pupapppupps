@@ -1,2 +1,6 @@
+github.com/gorilla/websocket v1.5.3 h1:saDtZ6Pbx/0u+bgYQ3q96pZgCzfhKXGPqt7kZ72aNNg=
+github.com/gorilla/websocket v1.5.3/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
 github.com/mmulet/term.everything v0.0.0-20260201015430-554ea94c4e98 h1:wMU+qXYvOsfXIcEJClkCCJ2zawXcwgtuTLmpn9KG6Bw=
 github.com/mmulet/term.everything v0.0.0-20260201015430-554ea94c4e98/go.mod h1:dffzX0qGkOAMkMwrroOvvjd9rrY76zFHk7MUjL5fwSM=
+github.com/veandco/go-sdl2 v0.4.40 h1:fZv6wC3zz1Xt167P09gazawnpa0KY5LM7JAvKpX9d/U=
+github.com/veandco/go-sdl2 v0.4.40/go.mod h1:OROqMhHD43nT4/i9crJukyVecjPNYYuCofep6SNiAjY=

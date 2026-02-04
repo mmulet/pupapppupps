@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Desktop Stream</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background-color: #1a1a2e;
+            color: #eaeaea;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        h1 {
+            margin-bottom: 20px;
+            color: #00d4ff;
+        }
+        #status {
+            margin-bottom: 10px;
+            padding: 10px 20px;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        #status.connected {
+            background-color: #00c853;
+            color: white;
+        }
+        #status.disconnected {
+            background-color: #ff5252;
+            color: white;
+        }
+        #status.connecting {
+            background-color: #ffab00;
+            color: black;
+        }
+        #canvas-container {
+            border: 3px solid #00d4ff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 0 30px rgba(0, 212, 255, 0.3);
+        }
+        #desktop-canvas {
+            display: block;
+            background-color: #000;
+        }
+        #stats {
+            margin-top: 15px;
+            font-size: 14px;
+            color: #888;
+        }
+    </style>
+</head>
+<body>
+    <h1>🖥️ Desktop Stream</h1>
+    <div id="status" class="connecting">Connecting...</div>
+    <div id="canvas-container">
+        <canvas id="desktop-canvas" width="800" height="600"></canvas>
+    </div>
+    <div id="stats">Waiting for frames...</div>
+
+    <script>
+        const canvas = document.getElementById('desktop-canvas');
+        const ctx = canvas.getContext('2d');
+        const statusEl = document.getElementById('status');
+        const statsEl = document.getElementById('stats');
+
+        let frameCount = 0;
+        let lastFrameTime = performance.now();
+        let fps = 0;
+
+        function updateStatus(status, text) {
+            statusEl.className = status;
+            statusEl.textContent = text;
+        }
+
+        function connect() {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const wsUrl = `${protocol}//${window.location.host}/ws`;
+            
+            updateStatus('connecting', 'Connecting...');
+            
+            const ws = new WebSocket(wsUrl);
+            ws.binaryType = 'arraybuffer';
+
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                updateStatus('connected', '🟢 Connected');
+            };
+
+            ws.onclose = () => {
+                console.log('WebSocket disconnected');
+                updateStatus('disconnected', '🔴 Disconnected - Reconnecting...');
+                setTimeout(connect, 2000);
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                updateStatus('disconnected', '🔴 Error');
+            };
+
+            ws.onmessage = (event) => {
+                const data = new DataView(event.data);
+                
+                // Read header: width, height, stride (4 bytes each, little-endian)
+                const width = data.getUint32(0, true);
+                const height = data.getUint32(4, true);
+                const stride = data.getUint32(8, true);
+                
+                // Resize canvas if needed
+                if (canvas.width !== width || canvas.height !== height) {
+                    canvas.width = width;
+                    canvas.height = height;
+                }
+
+                // Get pixel data (after 12-byte header)
+                const pixelData = new Uint8ClampedArray(event.data, 12);
+                
+                // Create ImageData and draw to canvas
+                const imageData = new ImageData(pixelData, width, height);
+                ctx.putImageData(imageData, 0, 0);
+
+                // Calculate FPS
+                frameCount++;
+                const now = performance.now();
+                if (now - lastFrameTime >= 1000) {
+                    fps = frameCount;
+                    frameCount = 0;
+                    lastFrameTime = now;
+                }
+                
+                statsEl.textContent = `Resolution: ${width}x${height} | FPS: ${fps} | Stride: ${stride}`;
+            };
+        }
+
+        // Start connection
+        connect();
+    </script>
+</body>
+</html>
