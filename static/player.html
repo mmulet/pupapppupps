@@ -69,6 +69,34 @@
 			#zoom-controls button:hover {
 				background: rgba(0, 0, 0, 0.8);
 			}
+			#toy-controls {
+				position: absolute;
+				bottom: 20px;
+				right: 20px;
+				z-index: 100;
+			}
+			#throw-toy {
+				width: 60px;
+				height: 60px;
+				font-size: 28px;
+				background: linear-gradient(135deg, #ff6b6b, #ffa500);
+				color: white;
+				border: 2px solid rgba(255, 255, 255, 0.5);
+				border-radius: 50%;
+				cursor: pointer;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				transition: transform 0.2s, box-shadow 0.2s;
+				box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+			}
+			#throw-toy:hover {
+				transform: scale(1.1);
+				box-shadow: 0 6px 20px rgba(255, 107, 107, 0.6);
+			}
+			#throw-toy:active {
+				transform: scale(0.95);
+			}
 		</style>
 	</head>
 	<body>
@@ -80,6 +108,10 @@
 		<div id="zoom-controls">
 			<button id="zoom-in" title="Zoom In">+</button>
 			<button id="zoom-out" title="Zoom Out">-</button>
+		</div>
+
+		<div id="toy-controls">
+			<button id="throw-toy" title="Throw Dog Toy">🎾</button>
 		</div>
 
 		<script type="importmap">
@@ -99,8 +131,10 @@
 			import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 			import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+			import { DogToySystem } from './dog_toy.js';
 
 			let scene, renderer, camera, stats;
+			let dogToySystem;
 			let model, skeleton, mixer, clock;
 
 			// WebSocket texture streaming
@@ -316,6 +350,9 @@
 				scene.background = new THREE.Color( 0xa0a0a0 );
 				scene.fog = new THREE.Fog( 0xa0a0a0, 10, 50 );
 
+				// Initialize dog toy system
+				dogToySystem = new DogToySystem(scene);
+
 				const hemiLight = new THREE.HemisphereLight( 0xffffff, 0x8d8d8d, 3 );
 				hemiLight.position.set( 0, 20, 0 );
 				scene.add( hemiLight );
@@ -426,7 +463,7 @@
 				const controls = new OrbitControls( camera, renderer.domElement );
 				controls.enablePan = false;
 				controls.enableZoom = true;
-				controls.target.set( 0, 1, 0 );
+				controls.target.set( 0, 0, 0 );
 				controls.update();
 
 				stats = new Stats();
@@ -435,6 +472,7 @@
 				window.addEventListener( 'resize', onWindowResize );
 
 				setupZoomControls();
+				setupDogToyControls();
 
 			}
 
@@ -654,6 +692,17 @@
 				}
 			}
 
+			function setupDogToyControls() {
+				const throwToyBtn = document.getElementById('throw-toy');
+				if (throwToyBtn) {
+					throwToyBtn.addEventListener('click', () => {
+						if (dogToySystem && camera) {
+							dogToySystem.throwToy(camera);
+						}
+					});
+				}
+			}
+
 			function zoomCamera(factor) {
 				if (!camera || !controls) return;
 
@@ -698,6 +747,11 @@
 				// Update the animation mixer, the stats panel, and render this frame
 
 				mixer.update( mixerUpdateDelta );
+
+				// Update dog toy physics
+				if (dogToySystem) {
+					dogToySystem.update(mixerUpdateDelta);
+				}
 
 				// Update screen-space bounding box for texture mapping
 				if (model && screenSpaceMaterial) {
