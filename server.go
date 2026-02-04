@@ -34,6 +34,7 @@ type WebSocketServer struct {
 	broadcast       chan []byte
 	keyboardHandler KeyboardEventHandler
 	mouseHandler    MouseEventHandler
+	readyTime       time.Time
 }
 
 // NewWebSocketServer creates a new WebSocket server instance
@@ -43,6 +44,7 @@ func NewWebSocketServer() *WebSocketServer {
 		broadcast:       make(chan []byte, 10),
 		keyboardHandler: nil,
 		mouseHandler:    nil,
+		readyTime:       time.Now().Add(15 * time.Second),
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024 * 1024, // Large buffer for image data
@@ -65,6 +67,13 @@ func (s *WebSocketServer) SetMouseHandler(handler MouseEventHandler) {
 
 // HandleWebSocket handles incoming WebSocket connections
 func (s *WebSocketServer) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
+	// Wait until the WebSocket server is ready (15 seconds after startup)
+	if time.Now().Before(s.readyTime) {
+		waitDuration := time.Until(s.readyTime)
+		log.Printf("WebSocket connection requested, waiting %v until ready...", waitDuration.Round(time.Second))
+		time.Sleep(waitDuration)
+	}
+
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Printf("WebSocket upgrade error: %v", err)
