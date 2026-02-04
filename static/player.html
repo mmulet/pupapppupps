@@ -316,17 +316,36 @@
 					if (pressed) {
 						const additiveNames = Object.keys(additiveActions);
 						if (additiveNames.length > 0) {
-							const randomName = additiveNames[Math.floor(Math.random() * additiveNames.length)];
+							const useShakeMode = panelSettings && panelSettings['use shake mode'];
+							const shakeActionName = 'Shake_Additive';
 
-							for (const name of additiveNames) {
-								const settings = additiveActions[name];
-								const weight = (name === randomName) ? 1.0 : 0.0;
+							if (useShakeMode && additiveActions[shakeActionName]) {
+								// New Mode: Set Shake_Additive to 1.0, others to 0.0
+								for (const name of additiveNames) {
+									const settings = additiveActions[name];
+									const weight = (name === shakeActionName) ? 1.0 : 0.0;
 
-								settings.weight = weight;
-								setWeight(settings.action, weight);
+									settings.weight = weight;
+									setWeight(settings.action, weight);
 
-								if (panelSettings) {
-									panelSettings[name] = weight;
+									if (panelSettings) {
+										panelSettings[name] = weight;
+									}
+								}
+							} else {
+								// Old Mode (or Shake_Additive missing): Random animation
+								const randomName = additiveNames[Math.floor(Math.random() * additiveNames.length)];
+
+								for (const name of additiveNames) {
+									const settings = additiveActions[name];
+									const weight = (name === randomName) ? 1.0 : 0.0;
+
+									settings.weight = weight;
+									setWeight(settings.action, weight);
+
+									if (panelSettings) {
+										panelSettings[name] = weight;
+									}
 								}
 							}
 						}
@@ -399,13 +418,21 @@
 
 					// Dynamic population of actions
 					if ( numAnimations > 0 ) {
-						// Assign first animation as base action
-						const baseClip = animations[0];
+						let baseClipIndex = 0;
+						const idleClipIndex = animations.findIndex(a => a.name === 'Idle_1');
+
+						if (idleClipIndex !== -1) {
+							baseClipIndex = idleClipIndex;
+						}
+
+						// Assign base action (Idle_1 if found, otherwise first animation)
+						const baseClip = animations[baseClipIndex];
 						baseActions[baseClip.name] = { weight: 1 };
 						currentBaseAction = baseClip.name;
 
 						// Assign remaining animations as additive actions
-						for ( let i = 1; i < numAnimations; ++ i ) {
+						for ( let i = 0; i < numAnimations; ++ i ) {
+							if (i === baseClipIndex) continue;
 							const clip = animations[i];
 							additiveActions[clip.name] = { weight: 0 };
 						}
@@ -484,10 +511,15 @@
 				const folder1 = panel.addFolder( 'Base Actions' );
 				const folder2 = panel.addFolder( 'Additive Action Weights' );
 				const folder3 = panel.addFolder( 'General Speed' );
+				const folder4 = panel.addFolder( 'Settings' );
 
 				panelSettings = {
-					'modify time scale': 1.0
+					'modify time scale': 1.0,
+					'use shake mode': true
 				};
+
+				folder4.add( panelSettings, 'use shake mode' );
+				folder4.open();
 
 				const baseNames = [ 'None', ...Object.keys( baseActions ) ];
 
