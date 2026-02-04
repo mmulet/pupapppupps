@@ -111,6 +111,11 @@ func main() {
 	}
 	log.Printf("Loaded GLB model: %s (%d meshes)", *glbFile, len(glbRenderer.Meshes))
 
+	// Play the "Bark" animation on loop
+	if err := glbRenderer.PlayAnimation("Bark", true); err != nil {
+		log.Printf("Warning: %v", err)
+	}
+
 	// Initialize arguments. Passing an empty string will let the library
 	// automatically choose a display name (e.g., wayland-0, wayland-1).
 	args := &Args{DisplayName: ""}
