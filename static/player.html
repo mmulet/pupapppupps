@@ -165,7 +165,7 @@
 			import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 			import { DogToySystem } from './dog_toy.js';
 
-			let scene, renderer, camera, stats;
+			let scene, renderer, camera, stats, controls;
 			let dogToySystem;
 			let model, skeleton, mixer, clock;
 
@@ -530,7 +530,7 @@
 				camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 0.1, 100 );
 				camera.position.set( - 1, 2, 3 );
 
-				const controls = new OrbitControls( camera, renderer.domElement );
+				controls = new OrbitControls( camera, renderer.domElement );
 				controls.enablePan = false;
 				controls.enableZoom = true;
 				controls.target.set( 0, 0.25, 0 );
