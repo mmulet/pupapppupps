@@ -258,6 +258,7 @@
 
 						model.traverse((object) => {
 							if (object.isMesh && object.material !== screenSpaceMaterial) {
+								if (object.material.name === 'Eyes') return;
 								object.material = screenSpaceMaterial;
 							}
 						});
