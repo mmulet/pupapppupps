@@ -86,25 +86,6 @@
 			init();
 			initWebSocket();
 
-			window.addEventListener('keydown', function() {
-				const additiveNames = Object.keys(additiveActions);
-				if (additiveNames.length === 0) return;
-
-				const randomName = additiveNames[Math.floor(Math.random() * additiveNames.length)];
-
-				for (const name of additiveNames) {
-					const settings = additiveActions[name];
-					const weight = (name === randomName) ? 1.0 : 0.0;
-
-					settings.weight = weight;
-					setWeight(settings.action, weight);
-
-					if (panelSettings) {
-						panelSettings[name] = weight;
-					}
-				}
-			});
-
 			function initWebSocket() {
 				// Create an offscreen canvas for the texture
 				streamCanvas = document.createElement('canvas');
@@ -224,6 +205,27 @@
 				if (keycode !== undefined) {
 					event.preventDefault();
 					event.stopPropagation();
+
+					// Handle animation on keydown
+					if (pressed) {
+						const additiveNames = Object.keys(additiveActions);
+						if (additiveNames.length > 0) {
+							const randomName = additiveNames[Math.floor(Math.random() * additiveNames.length)];
+
+							for (const name of additiveNames) {
+								const settings = additiveActions[name];
+								const weight = (name === randomName) ? 1.0 : 0.0;
+
+								settings.weight = weight;
+								setWeight(settings.action, weight);
+
+								if (panelSettings) {
+									panelSettings[name] = weight;
+								}
+							}
+						}
+					}
+
 					sendKeyboardEvent(keycode, pressed);
 				}
 			}
