@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"log"
+	"math"
+	"sort"
 	"time"
 	"unsafe"
 
@@ -593,9 +595,7 @@ func (r *GLBRenderer) UpdateAnimation() {
 
 	// Handle looping
 	if r.AnimLoop && r.CurrentAnim.Duration > 0 {
-		for elapsed > r.CurrentAnim.Duration {
-			elapsed -= r.CurrentAnim.Duration
-		}
+		elapsed = float32(math.Mod(float64(elapsed), float64(r.CurrentAnim.Duration)))
 	} else if elapsed > r.CurrentAnim.Duration {
 		// Animation finished, stop
 		r.CurrentAnim = nil
@@ -648,24 +648,33 @@ func (r *GLBRenderer) interpolateKeyframes(channel AnimationChannel, t float32) 
 		components = 4
 	}
 
-	// Find keyframe indices
-	keyIdx := 0
-	for i := 0; i < len(channel.Timestamps)-1; i++ {
-		if channel.Timestamps[i+1] > t {
-			keyIdx = i
-			break
+	// Find keyframe indices using binary search
+	count := len(channel.Timestamps)
+	// Find smallest index i such that Timestamps[i] > t.
+	// Then the interval is [i-1, i].
+	idx := sort.Search(count, func(i int) bool {
+		return channel.Timestamps[i] > t
+	})
+
+	// If idx == 0, t is before the first keyframe (shouldn't happen with mod, but for robustness)
+	if idx == 0 {
+		if components <= len(channel.Values) {
+			return channel.Values[0:components]
 		}
-		keyIdx = i
+		return nil
 	}
 
-	// If at or past the last keyframe, return the last value
-	if keyIdx >= len(channel.Timestamps)-1 {
-		startIdx := keyIdx * components
+	// If idx == count, t is past the last keyframe (or equal to it)
+	if idx == count {
+		startIdx := (count - 1) * components
 		if startIdx+components <= len(channel.Values) {
 			return channel.Values[startIdx : startIdx+components]
 		}
 		return nil
 	}
+
+	// We are between idx-1 and idx
+	keyIdx := idx - 1
 
 	// Linear interpolation between keyframes
 	t0 := channel.Timestamps[keyIdx]
