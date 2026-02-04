@@ -289,9 +289,18 @@
 						}
 
 						model.traverse((object) => {
-							if (object.isMesh && object.material !== screenSpaceMaterial) {
-								if (object.material.name === 'Eyes') return;
-								object.material = screenSpaceMaterial;
+							if (object.isMesh) {
+								if (Array.isArray(object.material)) {
+									for (let i = 0; i < object.material.length; i++) {
+										const mat = object.material[i];
+										if (mat !== screenSpaceMaterial && mat.name !== 'Eyes') {
+											object.material[i] = screenSpaceMaterial;
+										}
+									}
+								} else if (object.material !== screenSpaceMaterial) {
+									if (object.material.name === 'Eyes') return;
+									object.material = screenSpaceMaterial;
+								}
 							}
 						});
 					}
