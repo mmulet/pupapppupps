@@ -497,11 +497,25 @@
 				mesh.receiveShadow = true;
 				scene.add( mesh );
 
+				
+
 				const loader = new GLTFLoader();
 				loader.load( './export.glb', function ( gltf ) {
 
 					model = gltf.scene;
 					scene.add( model );
+
+					loader.load('./export.glb', function (gltf) {
+				    model = gltf.scene;
+				    scene.add(model);
+				
+				    // List materials here:
+				    model.traverse((object) => {
+				        if (object.isMesh) {
+				            console.log(object.name, object.material.name || object.material);
+				        }
+				    });
+				    
 
 					model.traverse( function ( object ) {
 
