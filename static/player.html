@@ -697,7 +697,8 @@
 				if (throwToyBtn) {
 					throwToyBtn.addEventListener('click', () => {
 						if (dogToySystem && camera) {
-							dogToySystem.throwToy(camera);
+							// Drop toy from above the puppy (assumed at origin), height 10
+							dogToySystem.dropToy(new THREE.Vector3(0, 10, 0));
 						}
 					});
 				}
