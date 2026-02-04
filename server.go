@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/binary"
 	"log"
+	"math"
 	"net/http"
 	"sync"
 	"time"
@@ -13,6 +14,18 @@ import (
 // KeyboardEventHandler is a callback for handling keyboard events from WebSocket clients
 type KeyboardEventHandler func(keycode uint32, pressed bool)
 
+// MouseEventType represents the type of mouse event
+type MouseEventType uint8
+
+const (
+	MouseEventMotion MouseEventType = 0
+	MouseEventButton MouseEventType = 1
+	MouseEventScroll MouseEventType = 2
+)
+
+// MouseEventHandler is a callback for handling mouse events from WebSocket clients
+type MouseEventHandler func(eventType MouseEventType, x, y float32, button uint32, pressed bool, scrollDelta float32)
+
 // WebSocketServer manages WebSocket connections for streaming the desktop buffer
 type WebSocketServer struct {
 	clients         map[*websocket.Conn]bool
@@ -20,6 +33,7 @@ type WebSocketServer struct {
 	upgrader        websocket.Upgrader
 	broadcast       chan []byte
 	keyboardHandler KeyboardEventHandler
+	mouseHandler    MouseEventHandler
 }
 
 // NewWebSocketServer creates a new WebSocket server instance
@@ -28,6 +42,7 @@ func NewWebSocketServer() *WebSocketServer {
 		clients:         make(map[*websocket.Conn]bool),
 		broadcast:       make(chan []byte, 10),
 		keyboardHandler: nil,
+		mouseHandler:    nil,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024 * 1024, // Large buffer for image data
@@ -41,6 +56,11 @@ func NewWebSocketServer() *WebSocketServer {
 // SetKeyboardHandler sets the callback for keyboard events
 func (s *WebSocketServer) SetKeyboardHandler(handler KeyboardEventHandler) {
 	s.keyboardHandler = handler
+}
+
+// SetMouseHandler sets the callback for mouse events
+func (s *WebSocketServer) SetMouseHandler(handler MouseEventHandler) {
+	s.mouseHandler = handler
 }
 
 // HandleWebSocket handles incoming WebSocket connections
@@ -73,15 +93,24 @@ func (s *WebSocketServer) HandleWebSocket(w http.ResponseWriter, r *http.Request
 				break
 			}
 
-			// Handle keyboard input messages
-			// Format: [type:1byte][keycode:4bytes][pressed:1byte]
-			// type: 1 = keyboard
+			// Handle input messages
+			// Format for keyboard: [type:1byte][keycode:4bytes][pressed:1byte]
+			// Format for mouse: [type:1byte][eventType:1byte][x:4bytes float][y:4bytes float][button:4bytes][pressed:1byte][scrollDelta:4bytes float]
+			// type: 1 = keyboard, 2 = mouse
 			if messageType == websocket.BinaryMessage && len(message) >= 6 {
 				msgType := message[0]
 				if msgType == 1 && s.keyboardHandler != nil { // Keyboard message
 					keycode := binary.LittleEndian.Uint32(message[1:5])
 					pressed := message[5] != 0
 					s.keyboardHandler(keycode, pressed)
+				} else if msgType == 2 && s.mouseHandler != nil && len(message) >= 19 { // Mouse message
+					eventType := MouseEventType(message[1])
+					x := math.Float32frombits(binary.LittleEndian.Uint32(message[2:6]))
+					y := math.Float32frombits(binary.LittleEndian.Uint32(message[6:10]))
+					button := binary.LittleEndian.Uint32(message[10:14])
+					pressed := message[14] != 0
+					scrollDelta := math.Float32frombits(binary.LittleEndian.Uint32(message[15:19]))
+					s.mouseHandler(eventType, x, y, button, pressed, scrollDelta)
 				}
 			}
 		}
@@ -200,4 +229,9 @@ func (h *HTTPServer) WebSocketClientCount() int {
 // SetKeyboardHandler sets the callback for keyboard events received from WebSocket clients
 func (h *HTTPServer) SetKeyboardHandler(handler KeyboardEventHandler) {
 	h.wsServer.SetKeyboardHandler(handler)
+}
+
+// SetMouseHandler sets the callback for mouse events received from WebSocket clients
+func (h *HTTPServer) SetMouseHandler(handler MouseEventHandler) {
+	h.wsServer.SetMouseHandler(handler)
 }

@@ -266,6 +266,8 @@
 
 				// Set up keyboard forwarding to Chrome
 				setupKeyboardForwarding();
+				// Set up mouse forwarding to Chrome
+				setupMouseForwarding();
 			}
 
 			// Map JavaScript key codes to Linux evdev keycodes
@@ -340,6 +342,124 @@
 				// Use capture phase to intercept events before Three.js/OrbitControls
 				document.addEventListener('keydown', (e) => handleKeyEvent(e, true), true);
 				document.addEventListener('keyup', (e) => handleKeyEvent(e, false), true);
+			}
+
+			// Store current screen-space bounding box for mouse coordinate conversion
+			let currentBoundsMin = { x: -1, y: -1 };
+			let currentBoundsMax = { x: 1, y: 1 };
+			// Desktop dimensions (same as server)
+			const desktopWidth = 800;
+			const desktopHeight = 600;
+
+			// Mouse event types matching server constants
+			const MouseEventMotion = 0;
+			const MouseEventButton = 1;
+			const MouseEventScroll = 2;
+
+			function sendMouseEvent(eventType, x, y, button, pressed, scrollDelta) {
+				if (ws && ws.readyState === WebSocket.OPEN) {
+					// Format: [type:1byte][eventType:1byte][x:4bytes float][y:4bytes float][button:4bytes][pressed:1byte][scrollDelta:4bytes float]
+					const buffer = new ArrayBuffer(19);
+					const view = new DataView(buffer);
+					view.setUint8(0, 2); // type: 2 = mouse
+					view.setUint8(1, eventType);
+					view.setFloat32(2, x, true); // little-endian
+					view.setFloat32(6, y, true);
+					view.setUint32(10, button, true);
+					view.setUint8(14, pressed ? 1 : 0);
+					view.setFloat32(15, scrollDelta, true);
+					ws.send(buffer);
+				}
+			}
+
+			function screenToTextureCoords(clientX, clientY) {
+				// Convert screen pixel coordinates to NDC (-1 to 1)
+				const ndcX = (clientX / window.innerWidth) * 2 - 1;
+				const ndcY = -((clientY / window.innerHeight) * 2 - 1); // Flip Y for WebGL
+
+				// Check if the point is within the model's screen-space bounding box
+				const boundsWidth = currentBoundsMax.x - currentBoundsMin.x;
+				const boundsHeight = currentBoundsMax.y - currentBoundsMin.y;
+
+				if (boundsWidth <= 0 || boundsHeight <= 0) {
+					return null; // Invalid bounds
+				}
+
+				// Convert from NDC to texture UV coordinates (0 to 1) based on bounding box
+				const u = (ndcX - currentBoundsMin.x) / boundsWidth;
+				const v = (ndcY - currentBoundsMin.y) / boundsHeight;
+
+				// Check if within texture bounds
+				if (u < 0 || u > 1 || v < 0 || v > 1) {
+					return null; // Outside the texture area
+				}
+
+				// Convert UV to desktop pixel coordinates
+				const desktopX = u * desktopWidth;
+				const desktopY = (1 - v) * desktopHeight; // Flip Y back for desktop coordinates
+
+				return { x: desktopX, y: desktopY };
+			}
+
+			function setupMouseForwarding() {
+				const container = document.getElementById('container');
+
+				// Mouse move
+				container.addEventListener('mousemove', (e) => {
+					const coords = screenToTextureCoords(e.clientX, e.clientY);
+					if (coords) {
+						sendMouseEvent(MouseEventMotion, coords.x, coords.y, 0, false, 0);
+					}
+				});
+
+				// Mouse button down
+				container.addEventListener('mousedown', (e) => {
+					const coords = screenToTextureCoords(e.clientX, e.clientY);
+					if (coords) {
+						// Map browser button to Linux button codes
+						let button;
+						switch (e.button) {
+							case 0: button = 0x110; break; // BTN_LEFT
+							case 1: button = 0x112; break; // BTN_MIDDLE
+							case 2: button = 0x111; break; // BTN_RIGHT
+							default: button = 0x110;
+						}
+						sendMouseEvent(MouseEventButton, coords.x, coords.y, button, true, 0);
+					}
+				});
+
+				// Mouse button up
+				container.addEventListener('mouseup', (e) => {
+					const coords = screenToTextureCoords(e.clientX, e.clientY);
+					if (coords) {
+						let button;
+						switch (e.button) {
+							case 0: button = 0x110; break;
+							case 1: button = 0x112; break;
+							case 2: button = 0x111; break;
+							default: button = 0x110;
+						}
+						sendMouseEvent(MouseEventButton, coords.x, coords.y, button, false, 0);
+					}
+				});
+
+				// Mouse wheel
+				container.addEventListener('wheel', (e) => {
+					const coords = screenToTextureCoords(e.clientX, e.clientY);
+					if (coords) {
+						// Scale and invert for Wayland (positive = up, negative = down)
+						const scrollDelta = -e.deltaY * 0.5;
+						sendMouseEvent(MouseEventScroll, coords.x, coords.y, 0, false, scrollDelta);
+					}
+				}, { passive: true });
+
+				// Prevent context menu on right-click within the model area
+				container.addEventListener('contextmenu', (e) => {
+					const coords = screenToTextureCoords(e.clientX, e.clientY);
+					if (coords) {
+						e.preventDefault();
+					}
+				});
 			}
 
 			function init() {
@@ -782,6 +902,12 @@
 
 					screenSpaceMaterial.uniforms.uBoundsMin.value.set(minX, minY);
 					screenSpaceMaterial.uniforms.uBoundsMax.value.set(maxX, maxY);
+
+					// Store bounds for mouse coordinate conversion
+					currentBoundsMin.x = minX;
+					currentBoundsMin.y = minY;
+					currentBoundsMax.x = maxX;
+					currentBoundsMax.y = maxY;
 				}
 
 				renderer.render( scene, camera );

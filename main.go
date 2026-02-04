@@ -145,10 +145,40 @@ func main() {
 	// Set up keyboard handler for WebSocket input
 	httpServer.SetKeyboardHandler(func(keycode uint32, pressed bool) {
 		mu.Lock()
-		activeClients := clients
+		activeClients := make([]*wayland.Client, 0, len(clients))
+		for _, c := range clients {
+			if c.Status == wayland.ClientStatus_Connected {
+				activeClients = append(activeClients, c)
+			}
+		}
 		mu.Unlock()
-		if keycode != 0 {
+		if keycode != 0 && len(activeClients) > 0 {
 			wayland.SendKeyboardKey(activeClients, keycode, pressed)
+		}
+	})
+
+	// Set up mouse handler for WebSocket input
+	httpServer.SetMouseHandler(func(eventType MouseEventType, x, y float32, button uint32, pressed bool, scrollDelta float32) {
+		mu.Lock()
+		activeClients := make([]*wayland.Client, 0, len(clients))
+		for _, c := range clients {
+			if c.Status == wayland.ClientStatus_Connected {
+				activeClients = append(activeClients, c)
+			}
+		}
+		mu.Unlock()
+
+		if len(activeClients) == 0 {
+			return
+		}
+
+		switch eventType {
+		case MouseEventMotion:
+			wayland.SendPointerMotion(activeClients, x, y)
+		case MouseEventButton:
+			wayland.SendPointerButton(activeClients, button, pressed)
+		case MouseEventScroll:
+			wayland.SendPointerAxis(activeClients, protocols.WlPointerAxis_enum_vertical_scroll, scrollDelta)
 		}
 	})
 
@@ -195,7 +225,8 @@ func main() {
 
 	// Launch Chrome with the Wayland display
 	go func() {
-		cmd := exec.Command("google-chrome")
+		// cmd := exec.Command("google-chrome")
+		cmd := exec.Command("google-chrome", "https://www.youtube.com/watch?v=qYx8NX49OS8&list=PLz8Iz-Fnk_eTkZvSNWXW_TKZ2UwVirT2M&index=1")
 		cmd.Env = append(os.Environ(), "WAYLAND_DISPLAY="+listener.WaylandDisplayName)
 		if err := cmd.Start(); err != nil {
 			log.Printf("Failed to launch Chrome: %v", err)
