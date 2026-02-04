@@ -108,6 +108,42 @@ export class DogToySystem {
     }
 
     /**
+     * Drops a toy from a specific position
+     * @param {THREE.Vector3} position - The position to drop from
+     */
+    dropToy(position) {
+        const toy = this.createToyMesh();
+        toy.position.copy(position);
+
+        // Initial velocity (mostly just gravity will take over, but maybe a little random spin)
+        const velocity = new THREE.Vector3(
+            (Math.random() - 0.5) * 0.5, // Slight horizontal drift
+            0,
+            (Math.random() - 0.5) * 0.5
+        );
+
+        // Angular velocity for spinning
+        const angularVelocity = new THREE.Vector3(
+            (Math.random() - 0.5) * 5,
+            (Math.random() - 0.5) * 5,
+            (Math.random() - 0.5) * 5
+        );
+
+        this.scene.add(toy);
+        this.toys.push({
+            mesh: toy,
+            velocity: velocity,
+            angularVelocity: angularVelocity,
+            age: 0,
+            maxAge: 15, // Remove after 15 seconds
+            settled: false
+        });
+
+        console.log('DogToySystem: Dropped a toy!');
+        return toy;
+    }
+
+    /**
      * Updates all toys physics - call this in your animation loop
      * @param {number} deltaTime - Time since last frame in seconds
      */
