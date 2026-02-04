@@ -281,7 +281,7 @@ func (r *GLBRenderer) Render(windowWidth, windowHeight int32) {
 	// Set up matrices
 	aspect := float32(windowWidth) / float32(windowHeight)
 	projection := mgl32.Perspective(mgl32.DegToRad(45.0), aspect, 0.1, 100.0)
-	view := mgl32.LookAtV(mgl32.Vec3{0, 0, 3}, mgl32.Vec3{0, 0, 0}, mgl32.Vec3{0, 1, 0})
+	view := mgl32.LookAtV(mgl32.Vec3{0, 0, 1}, mgl32.Vec3{0, 0, 0}, mgl32.Vec3{0, 1, 0})
 	model := mgl32.HomogRotate3DY(r.Rotation)
 
 	gl.UniformMatrix4fv(r.projectionLoc, 1, false, &projection[0])

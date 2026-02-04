@@ -269,8 +269,8 @@ func main() {
 			if len(desktop.Buffer) > 0 {
 				httpServer.BroadcastDesktopBuffer(
 					desktop.Buffer,
-					800,            // Desktop width
-					600,            // Desktop height
+					800, // Desktop width
+					600, // Desktop height
 					desktop.Stride,
 				)
 			}
