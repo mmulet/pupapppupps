@@ -11,15 +11,22 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
-	"unsafe"
 
+	"github.com/go-gl/gl/v4.1-core/gl"
 	"github.com/mmulet/term.everything/wayland"
 	"github.com/mmulet/term.everything/wayland/protocols"
 	"github.com/veandco/go-sdl2/sdl"
 )
+
+func init() {
+	// This is needed to arrange that main() runs on the main thread.
+	// OpenGL and SDL2 require this.
+	runtime.LockOSThread()
+}
 
 // Args implements the HasDisplayName interface required by MakeSocketListener.
 type Args struct {
@@ -34,7 +41,12 @@ func main() {
 	// Parse command line flags
 	httpAddr := flag.String("http", ":8080", "HTTP server address")
 	staticDir := flag.String("static", "./static", "Static files directory")
+	glbFile := flag.String("model", "", "Path to .glb model file to display")
 	flag.Parse()
+
+	if *glbFile == "" {
+		log.Fatal("Please specify a .glb model file with -model flag")
+	}
 
 	// Start HTTP server with WebSocket support
 	httpServer := NewHTTPServer(*httpAddr, *staticDir)
@@ -43,30 +55,61 @@ func main() {
 	}
 	defer httpServer.Stop()
 
-	// Initialize SDL2
+	// Initialize SDL2 with OpenGL
 	if err := sdl.Init(sdl.INIT_VIDEO | sdl.INIT_EVENTS); err != nil {
 		log.Fatalf("Failed to initialize SDL2: %v", err)
 	}
 	defer sdl.Quit()
 
-	window, err := sdl.CreateWindow("Wayland Compositor", sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED, 800, 600, sdl.WINDOW_SHOWN)
+	// Set OpenGL attributes
+	sdl.GLSetAttribute(sdl.GL_CONTEXT_MAJOR_VERSION, 4)
+	sdl.GLSetAttribute(sdl.GL_CONTEXT_MINOR_VERSION, 1)
+	sdl.GLSetAttribute(sdl.GL_CONTEXT_PROFILE_MASK, sdl.GL_CONTEXT_PROFILE_CORE)
+	sdl.GLSetAttribute(sdl.GL_DOUBLEBUFFER, 1)
+	sdl.GLSetAttribute(sdl.GL_DEPTH_SIZE, 24)
+
+	window, err := sdl.CreateWindow("Wayland Compositor - 3D View",
+		sdl.WINDOWPOS_UNDEFINED, sdl.WINDOWPOS_UNDEFINED,
+		800, 600,
+		sdl.WINDOW_SHOWN|sdl.WINDOW_OPENGL|sdl.WINDOW_RESIZABLE)
 	if err != nil {
 		log.Fatalf("Failed to create SDL2 window: %v", err)
 	}
 	defer window.Destroy()
 
-	renderer, err := sdl.CreateRenderer(window, -1, sdl.RENDERER_ACCELERATED)
+	// Create OpenGL context
+	glContext, err := window.GLCreateContext()
 	if err != nil {
-		log.Fatalf("Failed to create SDL2 renderer: %v", err)
+		log.Fatalf("Failed to create OpenGL context: %v", err)
 	}
-	defer renderer.Destroy()
+	defer sdl.GLDeleteContext(glContext)
 
-	// Create texture for desktop buffer (RGBA format, 800x600)
-	texture, err := renderer.CreateTexture(uint32(sdl.PIXELFORMAT_RGBA32), sdl.TEXTUREACCESS_STREAMING, 800, 600)
-	if err != nil {
-		log.Fatalf("Failed to create SDL2 texture: %v", err)
+	// Initialize OpenGL
+	if err := gl.Init(); err != nil {
+		log.Fatalf("Failed to initialize OpenGL: %v", err)
 	}
-	defer texture.Destroy()
+
+	log.Printf("OpenGL Version: %s", gl.GoStr(gl.GetString(gl.VERSION)))
+	log.Printf("GLSL Version: %s", gl.GoStr(gl.GetString(gl.SHADING_LANGUAGE_VERSION)))
+
+	// Enable depth testing and other OpenGL settings
+	gl.Enable(gl.DEPTH_TEST)
+	gl.Enable(gl.CULL_FACE)
+	gl.CullFace(gl.BACK)
+	gl.ClearColor(0.1, 0.1, 0.1, 1.0)
+
+	// Create GLB renderer
+	glbRenderer, err := NewGLBRenderer()
+	if err != nil {
+		log.Fatalf("Failed to create GLB renderer: %v", err)
+	}
+	defer glbRenderer.Destroy()
+
+	// Load the GLB model
+	if err := glbRenderer.LoadGLB(*glbFile); err != nil {
+		log.Fatalf("Failed to load GLB model: %v", err)
+	}
+	log.Printf("Loaded GLB model: %s (%d meshes)", *glbFile, len(glbRenderer.Meshes))
 
 	// Initialize arguments. Passing an empty string will let the library
 	// automatically choose a display name (e.g., wayland-0, wayland-1).
@@ -232,13 +275,22 @@ func main() {
 				)
 			}
 
-			// Update SDL2 texture with desktop buffer and render
+			// Update texture with desktop buffer
 			if len(desktop.Buffer) > 0 {
-				texture.Update(nil, unsafe.Pointer(&desktop.Buffer[0]), desktop.Stride)
+				glbRenderer.UpdateTexture(desktop.Buffer, 800, 600, int32(desktop.Stride))
 			}
-			renderer.Clear()
-			renderer.Copy(texture, nil, nil)
-			renderer.Present()
+
+			// Rotate the model slowly
+			glbRenderer.Rotation += 0.01
+
+			// Get current window size for proper viewport
+			winW, winH := window.GetSize()
+			gl.Viewport(0, 0, winW, winH)
+
+			// Clear and render
+			gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+			glbRenderer.Render(winW, winH)
+			window.GLSwap()
 
 			frameCount++
 			if time.Since(lastLog) >= 5*time.Second {
