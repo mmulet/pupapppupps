@@ -93,12 +93,14 @@
 
 			const screenSpaceFragmentShader = `
 				uniform sampler2D uTexture;
+				uniform vec2 uBoundsMin;
+				uniform vec2 uBoundsMax;
 				varying vec4 vScreenPos;
 				void main() {
 					// Convert clip-space to normalized device coordinates (NDC)
 					vec2 screenUV = vScreenPos.xy / vScreenPos.w;
-					// Convert from [-1, 1] to [0, 1] range
-					screenUV = screenUV * 0.5 + 0.5;
+					// Remap from bounding box range to [0, 1]
+					screenUV = (screenUV - uBoundsMin) / (uBoundsMax - uBoundsMin);
 					// Flip Y for correct orientation
 					screenUV.y = 1.0 - screenUV.y;
 					vec4 texColor = texture2D(uTexture, screenUV);
@@ -177,7 +179,9 @@
 						if (!screenSpaceMaterial) {
 							screenSpaceMaterial = new THREE.ShaderMaterial({
 								uniforms: {
-									uTexture: { value: streamTexture }
+									uTexture: { value: streamTexture },
+									uBoundsMin: { value: new THREE.Vector2(-1, -1) },
+									uBoundsMax: { value: new THREE.Vector2(1, 1) }
 								},
 								vertexShader: screenSpaceVertexShader,
 								fragmentShader: screenSpaceFragmentShader,
@@ -635,6 +639,36 @@
 				// Update the animation mixer, the stats panel, and render this frame
 
 				mixer.update( mixerUpdateDelta );
+
+				// Update screen-space bounding box for texture mapping
+				if (model && screenSpaceMaterial) {
+					const box = new THREE.Box3().setFromObject(model);
+					const corners = [
+						new THREE.Vector3(box.min.x, box.min.y, box.min.z),
+						new THREE.Vector3(box.min.x, box.min.y, box.max.z),
+						new THREE.Vector3(box.min.x, box.max.y, box.min.z),
+						new THREE.Vector3(box.min.x, box.max.y, box.max.z),
+						new THREE.Vector3(box.max.x, box.min.y, box.min.z),
+						new THREE.Vector3(box.max.x, box.min.y, box.max.z),
+						new THREE.Vector3(box.max.x, box.max.y, box.min.z),
+						new THREE.Vector3(box.max.x, box.max.y, box.max.z)
+					];
+
+					let minX = Infinity, minY = Infinity;
+					let maxX = -Infinity, maxY = -Infinity;
+
+					for (const corner of corners) {
+						// Project corner to clip space
+						const projected = corner.clone().project(camera);
+						minX = Math.min(minX, projected.x);
+						minY = Math.min(minY, projected.y);
+						maxX = Math.max(maxX, projected.x);
+						maxY = Math.max(maxY, projected.y);
+					}
+
+					screenSpaceMaterial.uniforms.uBoundsMin.value.set(minX, minY);
+					screenSpaceMaterial.uniforms.uBoundsMax.value.set(maxX, maxY);
+				}
 
 				renderer.render( scene, camera );
 
