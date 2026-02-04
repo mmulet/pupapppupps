@@ -1,0 +1,15 @@
+{
+  "name": "pupapppupps",
+  "version": "1.0.0",
+  "description": "Intial readme",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@google/jules-sdk": "^0.0.6"
+  }
+}
