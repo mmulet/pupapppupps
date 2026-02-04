@@ -76,11 +76,15 @@
 			let ws;
 			let screenSpaceMaterial;
 
-			// Custom shader for screen-space texture mapping
+			// Custom shader for screen-space texture mapping with skinning support
 			const screenSpaceVertexShader = `
+				#include <skinning_pars_vertex>
 				varying vec4 vScreenPos;
 				void main() {
-					vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+					#include <skinbase_vertex>
+					#include <begin_vertex>
+					#include <skinning_vertex>
+					vec4 mvPosition = modelViewMatrix * vec4(transformed, 1.0);
 					gl_Position = projectionMatrix * mvPosition;
 					// Pass the clip-space position to fragment shader
 					vScreenPos = gl_Position;
@@ -176,7 +180,8 @@
 									uTexture: { value: streamTexture }
 								},
 								vertexShader: screenSpaceVertexShader,
-								fragmentShader: screenSpaceFragmentShader
+								fragmentShader: screenSpaceFragmentShader,
+								skinning: true
 							});
 						}
 
