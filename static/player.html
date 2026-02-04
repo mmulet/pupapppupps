@@ -100,8 +100,9 @@
 			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 			import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-			let scene, renderer, camera, stats;
-			let model, skeleton, mixer, clock;
+			let scene, renderer, camera, stats, controls;
+			let model, skeleton, mixer, clock, headBone;
+			const headPos = new THREE.Vector3();
 
 			// WebSocket texture streaming
 			let streamTexture, streamCanvas, streamCtx;
@@ -347,6 +348,7 @@
 					model.traverse( function ( object ) {
 
 						if ( object.isMesh ) object.castShadow = true;
+						if ( object.isBone && object.name === 'head' ) headBone = object;
 
 					} );
 
@@ -423,7 +425,7 @@
 				camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 1, 100 );
 				camera.position.set( - 1, 2, 3 );
 
-				const controls = new OrbitControls( camera, renderer.domElement );
+				controls = new OrbitControls( camera, renderer.domElement );
 				controls.enablePan = false;
 				controls.enableZoom = true;
 				controls.target.set( 0, 1, 0 );
@@ -698,6 +700,12 @@
 				// Update the animation mixer, the stats panel, and render this frame
 
 				mixer.update( mixerUpdateDelta );
+
+				if ( headBone ) {
+					headBone.getWorldPosition( headPos );
+					controls.target.copy( headPos );
+					controls.update();
+				}
 
 				// Update screen-space bounding box for texture mapping
 				if (model && screenSpaceMaterial) {
