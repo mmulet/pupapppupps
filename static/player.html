@@ -165,10 +165,11 @@
 				void main() {
 					// Convert clip-space to normalized device coordinates (NDC)
 					vec2 screenUV = vScreenPos.xy / vScreenPos.w;
+					// Flip X and Y in NDC space before remapping
+					screenUV.x = screenUV.x;
+					//screenUV.y = -screenUV.y;
 					// Remap from bounding box range to [0, 1]
 					screenUV = (screenUV - uBoundsMin) / (uBoundsMax - uBoundsMin);
-					// Flip Y for correct orientation
-					screenUV.y = 1.0 - screenUV.y;
 					vec4 texColor = texture2D(uTexture, screenUV);
 					gl_FragColor = texColor;
 				}
