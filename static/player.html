@@ -131,7 +131,7 @@
 			import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 			import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-			import { DogToySystem } from './dog_toy.js';
+			import { DogToySystem } from './dog_toy.js?v=2';
 
 			let scene, renderer, camera, stats;
 			let dogToySystem;
@@ -171,7 +171,8 @@
 					// Remap from bounding box range to [0, 1]
 					screenUV = (screenUV - uBoundsMin) / (uBoundsMax - uBoundsMin);
 					vec4 texColor = texture2D(uTexture, screenUV);
-					gl_FragColor = texColor;
+					// gl_FragColor = texColor;
+					gl_FragColor = vec4(texColor.b,texColor.g,texColor.r,texColor.a);
 				}
 			`;
 
