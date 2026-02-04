@@ -74,6 +74,31 @@
 				bottom: 20px;
 				right: 20px;
 				z-index: 100;
+				display: flex;
+				flex-direction: column;
+				gap: 10px;
+			}
+			#death-btn {
+				width: 60px;
+				height: 60px;
+				font-size: 28px;
+				background: linear-gradient(135deg, #333, #000);
+				color: white;
+				border: 2px solid rgba(255, 255, 255, 0.5);
+				border-radius: 50%;
+				cursor: pointer;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				transition: transform 0.2s, box-shadow 0.2s;
+				box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+			}
+			#death-btn:hover {
+				transform: scale(1.1);
+				box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6);
+			}
+			#death-btn:active {
+				transform: scale(0.95);
 			}
 			#throw-toy {
 				width: 60px;
@@ -112,6 +137,7 @@
 
 		<div id="toy-controls">
 			<button id="throw-toy" title="Throw Dog Toy">🎾</button>
+			<button id="death-btn" title="Play Death Animation">💀</button>
 		</div>
 
 		<script type="importmap">
@@ -181,6 +207,10 @@
 			const allActions = [];
 			const baseActions = {};
 			const additiveActions = {};
+			window.baseActions = baseActions;
+			window.additiveActions = additiveActions;
+			window.allActions = allActions;
+
 			let panelSettings, numAnimations;
 
 			init();
@@ -475,6 +505,7 @@
 
 				setupZoomControls();
 				setupDogToyControls();
+				setupDeathButton();
 
 			}
 
@@ -701,6 +732,56 @@
 						if (dogToySystem && camera) {
 							// Drop toy from above the puppy (assumed at origin), height 10
 							dogToySystem.dropToy(new THREE.Vector3(0, 10, 0));
+						}
+					});
+				}
+			}
+
+			function setupDeathButton() {
+				const deathBtn = document.getElementById('death-btn');
+				if (deathBtn) {
+					deathBtn.addEventListener('click', () => {
+						// Find death animation
+						const deathNames = ['Death_L', 'Death_R', 'Death'];
+						let deathAnimName = null;
+
+						for (const name of deathNames) {
+							if (baseActions[name] || additiveActions[name]) {
+								deathAnimName = name;
+								break;
+							}
+						}
+
+						if (deathAnimName) {
+							console.log('Playing death animation:', deathAnimName);
+
+							// Set all base actions to 0 weight (except if it is the death action)
+							for (const name in baseActions) {
+								if (name !== deathAnimName) {
+									setWeight(baseActions[name].action, 0);
+								}
+							}
+
+							// Set all additive actions to 0 weight
+							for (const name in additiveActions) {
+								if (name !== deathAnimName) {
+									const settings = additiveActions[name];
+									settings.weight = 0;
+									setWeight(settings.action, 0);
+									if (panelSettings) panelSettings[name] = 0;
+								}
+							}
+
+							// Set death action to 1
+							const settings = baseActions[deathAnimName] || additiveActions[deathAnimName];
+							if (additiveActions[deathAnimName]) {
+								settings.weight = 1.0;
+								if (panelSettings) panelSettings[deathAnimName] = 1.0;
+							}
+							setWeight(settings.action, 1.0);
+
+						} else {
+							console.warn('Death animation not found');
 						}
 					});
 				}
