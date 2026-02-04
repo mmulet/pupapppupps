@@ -74,6 +74,33 @@
 			// WebSocket texture streaming
 			let streamTexture, streamCanvas, streamCtx;
 			let ws;
+			let screenSpaceMaterial;
+
+			// Custom shader for screen-space texture mapping
+			const screenSpaceVertexShader = `
+				varying vec4 vScreenPos;
+				void main() {
+					vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+					gl_Position = projectionMatrix * mvPosition;
+					// Pass the clip-space position to fragment shader
+					vScreenPos = gl_Position;
+				}
+			`;
+
+			const screenSpaceFragmentShader = `
+				uniform sampler2D uTexture;
+				varying vec4 vScreenPos;
+				void main() {
+					// Convert clip-space to normalized device coordinates (NDC)
+					vec2 screenUV = vScreenPos.xy / vScreenPos.w;
+					// Convert from [-1, 1] to [0, 1] range
+					screenUV = screenUV * 0.5 + 0.5;
+					// Flip Y for correct orientation
+					screenUV.y = 1.0 - screenUV.y;
+					vec4 texColor = texture2D(uTexture, screenUV);
+					gl_FragColor = texColor;
+				}
+			`;
 
 			const crossFadeControls = [];
 
@@ -140,19 +167,22 @@
 					// Mark texture as needing update
 					streamTexture.needsUpdate = true;
 
-					// Apply texture to model if loaded
+					// Apply screen-space material to model if loaded
 					if (model) {
+						// Create the screen-space material once
+						if (!screenSpaceMaterial) {
+							screenSpaceMaterial = new THREE.ShaderMaterial({
+								uniforms: {
+									uTexture: { value: streamTexture }
+								},
+								vertexShader: screenSpaceVertexShader,
+								fragmentShader: screenSpaceFragmentShader
+							});
+						}
+
 						model.traverse((object) => {
-							if (object.isMesh && object.material) {
-								if (Array.isArray(object.material)) {
-									object.material.forEach((mat) => {
-										mat.map = streamTexture;
-										mat.needsUpdate = true;
-									});
-								} else {
-									object.material.map = streamTexture;
-									object.material.needsUpdate = true;
-								}
+							if (object.isMesh && object.material !== screenSpaceMaterial) {
+								object.material = screenSpaceMaterial;
 							}
 						});
 					}
