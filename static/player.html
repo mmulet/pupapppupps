@@ -47,7 +47,7 @@
 	<body>
 		<div id="container"></div>
 		<div id="info">
-			Additive Animation Player - <a href="https://threejs.org" target="_blank" rel="noopener">three.js</a>
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a>
 		</div>
 
 		<script type="importmap">
@@ -85,6 +85,25 @@
 
 			init();
 			initWebSocket();
+
+			window.addEventListener('keydown', function() {
+				const additiveNames = Object.keys(additiveActions);
+				if (additiveNames.length === 0) return;
+
+				const randomName = additiveNames[Math.floor(Math.random() * additiveNames.length)];
+
+				for (const name of additiveNames) {
+					const settings = additiveActions[name];
+					const weight = (name === randomName) ? 1.0 : 0.0;
+
+					settings.weight = weight;
+					setWeight(settings.action, weight);
+
+					if (panelSettings) {
+						panelSettings[name] = weight;
+					}
+				}
+			});
 
 			function initWebSocket() {
 				// Create an offscreen canvas for the texture
