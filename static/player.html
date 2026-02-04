@@ -71,6 +71,10 @@
 			let scene, renderer, camera, stats;
 			let model, skeleton, mixer, clock;
 
+			// WebSocket texture streaming
+			let streamTexture, streamCanvas, streamCtx;
+			let ws;
+
 			const crossFadeControls = [];
 
 			let currentBaseAction = 'None';
@@ -80,6 +84,80 @@
 			let panelSettings, numAnimations;
 
 			init();
+			initWebSocket();
+
+			function initWebSocket() {
+				// Create an offscreen canvas for the texture
+				streamCanvas = document.createElement('canvas');
+				streamCanvas.width = 800;
+				streamCanvas.height = 600;
+				streamCtx = streamCanvas.getContext('2d');
+
+				// Create texture from canvas
+				streamTexture = new THREE.CanvasTexture(streamCanvas);
+				streamTexture.colorSpace = THREE.SRGBColorSpace;
+
+				const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+				const wsUrl = `${protocol}//${window.location.host}/ws`;
+
+				ws = new WebSocket(wsUrl);
+				ws.binaryType = 'arraybuffer';
+
+				ws.onopen = () => {
+					console.log('WebSocket connected for texture streaming');
+				};
+
+				ws.onclose = () => {
+					console.log('WebSocket disconnected - Reconnecting...');
+					setTimeout(initWebSocket, 2000);
+				};
+
+				ws.onerror = (error) => {
+					console.error('WebSocket error:', error);
+				};
+
+				ws.onmessage = (event) => {
+					const data = new DataView(event.data);
+
+					// Read header: width, height, stride (4 bytes each, little-endian)
+					const width = data.getUint32(0, true);
+					const height = data.getUint32(4, true);
+					const stride = data.getUint32(8, true);
+
+					// Resize canvas if needed
+					if (streamCanvas.width !== width || streamCanvas.height !== height) {
+						streamCanvas.width = width;
+						streamCanvas.height = height;
+					}
+
+					// Get pixel data (after 12-byte header)
+					const pixelData = new Uint8ClampedArray(event.data, 12);
+
+					// Create ImageData and draw to canvas
+					const imageData = new ImageData(pixelData, width, height);
+					streamCtx.putImageData(imageData, 0, 0);
+
+					// Mark texture as needing update
+					streamTexture.needsUpdate = true;
+
+					// Apply texture to model if loaded
+					if (model) {
+						model.traverse((object) => {
+							if (object.isMesh && object.material) {
+								if (Array.isArray(object.material)) {
+									object.material.forEach((mat) => {
+										mat.map = streamTexture;
+										mat.needsUpdate = true;
+									});
+								} else {
+									object.material.map = streamTexture;
+									object.material.needsUpdate = true;
+								}
+							}
+						});
+					}
+				};
+			}
 
 			function init() {
 
