@@ -73,7 +73,7 @@
 				position: absolute;
 				bottom: 20px;
 				right: 20px;
-				z-index: 100;
+				z-index: 2000;
 			}
 			#throw-toy {
 				width: 60px;
@@ -97,6 +97,34 @@
 			#throw-toy:active {
 				transform: scale(0.95);
 			}
+			#animation-controls {
+				position: absolute;
+				bottom: 20px;
+				right: 100px;
+				z-index: 2000;
+			}
+			#stop-anim-btn {
+				width: 60px;
+				height: 60px;
+				font-size: 24px;
+				background: linear-gradient(135deg, #ff6b6b, #ff4757);
+				color: white;
+				border: 2px solid rgba(255, 255, 255, 0.5);
+				border-radius: 50%;
+				cursor: pointer;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				transition: transform 0.2s, box-shadow 0.2s;
+				box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+			}
+			#stop-anim-btn:hover {
+				transform: scale(1.1);
+				box-shadow: 0 6px 20px rgba(255, 107, 107, 0.6);
+			}
+			#stop-anim-btn:active {
+				transform: scale(0.95);
+			}
 		</style>
 	</head>
 	<body>
@@ -112,6 +140,10 @@
 
 		<div id="toy-controls">
 			<button id="throw-toy" title="Throw Dog Toy">🎾</button>
+		</div>
+
+		<div id="animation-controls">
+			<button id="stop-anim-btn" title="Stop Playing Animation">🛑</button>
 		</div>
 
 		<script type="importmap">
@@ -475,6 +507,7 @@
 
 				setupZoomControls();
 				setupDogToyControls();
+				setupAnimationControls();
 
 			}
 
@@ -703,6 +736,65 @@
 							dogToySystem.dropToy(new THREE.Vector3(0, 10, 0));
 						}
 					});
+				}
+			}
+
+			function setupAnimationControls() {
+				const stopBtn = document.getElementById('stop-anim-btn');
+				if (stopBtn) {
+					stopBtn.addEventListener('click', stopAllAnimations);
+				}
+			}
+
+			function stopAllAnimations() {
+				const targetName = 'Idle_1';
+				let foundAsBase = false;
+
+				// Handle Base Actions
+				for (const name of Object.keys(baseActions)) {
+					const settings = baseActions[name];
+					const action = settings.action;
+					if (name === targetName) {
+						setWeight(action, 1.0);
+						settings.weight = 1.0;
+						currentBaseAction = name;
+						foundAsBase = true;
+					} else {
+						setWeight(action, 0.0);
+						settings.weight = 0.0;
+					}
+				}
+
+				if (!foundAsBase) {
+					currentBaseAction = 'None';
+				}
+
+				// Update crossfade controls
+				crossFadeControls.forEach(function (control) {
+					const name = control.property;
+					if (name === currentBaseAction) {
+						control.setActive();
+					} else {
+						control.setInactive();
+					}
+				});
+
+				// Handle Additive Actions
+				for (const name of Object.keys(additiveActions)) {
+					const settings = additiveActions[name];
+					const action = settings.action;
+
+					let weight = 0.0;
+					if (name === targetName) {
+						weight = 1.0;
+					}
+
+					setWeight(action, weight);
+					settings.weight = weight;
+
+					if (panelSettings) {
+						panelSettings[name] = weight;
+					}
 				}
 			}
 
