@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three.js Shader Mix Demo</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; }
+        #info {
+            position: absolute;
+            top: 10px;
+            width: 100%;
+            text-align: center;
+            color: white;
+            font-family: sans-serif;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="info">Three.js Mix Shader (Based on Blended UV Map/Mask)</div>
+    <script type="module">
+        import * as THREE from 'https://unpkg.com/three@0.160.0/build/three.module.js';
+
+        function main() {
+            // 1. Setup Scene
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            document.body.appendChild(renderer.domElement);
+
+            const scene = new THREE.Scene();
+            // Use OrthographicCamera for a 2D full-screen effect
+            const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+            // 2. Generate Procedural Textures
+            const texture1 = createCheckerTexture('red', 'black');
+            const texture2 = createCheckerTexture('blue', 'white', 8); // Different scale
+            const mixMap = createGradientTexture();
+
+            // 3. Create Shader Material
+            const material = new THREE.ShaderMaterial({
+                uniforms: {
+                    uTexture1: { value: texture1 },
+                    uTexture2: { value: texture2 },
+                    uMixMap: { value: mixMap }
+                },
+                vertexShader: `
+                    varying vec2 vUv;
+                    void main() {
+                        vUv = uv;
+                        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+                    }
+                `,
+                fragmentShader: `
+                    uniform sampler2D uTexture1;
+                    uniform sampler2D uTexture2;
+                    uniform sampler2D uMixMap;
+                    varying vec2 vUv;
+
+                    void main() {
+                        vec4 tex1 = texture2D(uTexture1, vUv);
+                        vec4 tex2 = texture2D(uTexture2, vUv);
+
+                        // Read the mix value from the red channel of the mix map
+                        float mixFactor = texture2D(uMixMap, vUv).r;
+
+                        // Mix the two textures based on the factor
+                        // mix(x, y, a) returns x*(1-a) + y*a
+                        gl_FragColor = mix(tex1, tex2, mixFactor);
+                    }
+                `
+            });
+
+            // 4. Create Plane Mesh
+            const geometry = new THREE.PlaneGeometry(2, 2);
+            const mesh = new THREE.Mesh(geometry, material);
+            scene.add(mesh);
+
+            // 5. Render Loop
+            function animate() {
+                requestAnimationFrame(animate);
+                renderer.render(scene, camera);
+            }
+            animate();
+
+            // Handle Resize
+            window.addEventListener('resize', () => {
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                // Camera is orthographic -1 to 1, so no update needed for aspect ratio if we just want to stretch/fill
+            });
+        }
+
+        // Helper: Create a checkerboard texture
+        function createCheckerTexture(c1, c2, size = 4) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+
+            const step = canvas.width / size;
+            for (let y = 0; y < size; y++) {
+                for (let x = 0; x < size; x++) {
+                    ctx.fillStyle = (x + y) % 2 === 0 ? c1 : c2;
+                    ctx.fillRect(x * step, y * step, step, step);
+                }
+            }
+            const tex = new THREE.CanvasTexture(canvas);
+            tex.colorSpace = THREE.SRGBColorSpace;
+            tex.minFilter = THREE.NearestFilter;
+            tex.magFilter = THREE.NearestFilter;
+            return tex;
+        }
+
+        // Helper: Create a radial gradient texture (Center=1, Edge=0 or vice versa)
+        // Let's make it linear horizontal for clarity: Left=0 (Tex1), Right=1 (Tex2)
+        // Or Radial: Center=White(1), Edge=Black(0)
+        function createGradientTexture() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 256;
+            canvas.height = 256;
+            const ctx = canvas.getContext('2d');
+
+            // Linear Gradient from Left (Black) to Right (White)
+            // Black = 0.0 = Texture1
+            // White = 1.0 = Texture2
+            const grad = ctx.createLinearGradient(0, 0, 256, 0);
+            grad.addColorStop(0, 'black');
+            grad.addColorStop(1, 'white');
+
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 256, 256);
+
+            // Add some text or noise to make it interesting
+            ctx.fillStyle = 'white';
+            ctx.font = '40px sans-serif';
+            ctx.fillText('MASK', 80, 140);
+
+            const tex = new THREE.CanvasTexture(canvas);
+            // Masks are usually data, so LinearColorSpace might be better, but sRGB is fine for visual gradient
+            tex.colorSpace = THREE.NoColorSpace;
+            return tex;
+        }
+
+        main();
+    </script>
+</body>
+</html>
