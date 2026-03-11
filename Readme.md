@@ -1,5 +1,9 @@
 # Pupapppupps
 As featured in Wev dev Challenge Season 3 episode 1:
+
+Watch on Youtube!:
+
+
 [![Watch the video](./static/web-dev-challenge-s3.e1-google-jules_3.jpeg)](https://www.youtube.com/watch?v=BP48Y9JiMUo)
 
 A Wayland compositor that renders client applications onto a 3D model loaded from a GLB file.
