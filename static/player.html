@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - additive animation - skinning</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body {
+				margin: 0;
+				background-color: #000;
+				color: #fff;
+				font-family: Monospace;
+				font-size: 13px;
+				line-height: 24px;
+				overscroll-behavior: none;
+			}
+			a {
+				color: blue;
+			}
+			.control-inactive button {
+				color: #888;
+			}
+			#info {
+				position: absolute;
+				top: 0px;
+				width: 100%;
+				padding: 10px;
+				box-sizing: border-box;
+				text-align: center;
+				-moz-user-select: none;
+				-webkit-user-select: none;
+				-ms-user-select: none;
+				user-select: none;
+				pointer-events: none;
+				z-index: 1;
+			}
+			#container {
+				position: absolute;
+				top: 0;
+				left: 0;
+				width: 100%;
+				height: 100%;
+			}
+			/* lil-gui styles will be injected by the library */
+			#zoom-controls {
+				position: absolute;
+				bottom: 20px;
+				left: 20px;
+				display: flex;
+				flex-direction: column;
+				gap: 5px;
+				z-index: 100;
+			}
+			#zoom-controls button {
+				width: 40px;
+				height: 40px;
+				font-size: 24px;
+				font-weight: bold;
+				background: rgba(0, 0, 0, 0.5);
+				color: white;
+				border: 1px solid rgba(255, 255, 255, 0.3);
+				border-radius: 5px;
+				cursor: pointer;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				transition: background 0.2s;
+			}
+			#zoom-controls button:hover {
+				background: rgba(0, 0, 0, 0.8);
+			}
+			#toy-controls {
+				position: absolute;
+				bottom: 20px;
+				right: 20px;
+				z-index: 2000;
+			}
+			#throw-toy {
+				width: 60px;
+				height: 60px;
+				font-size: 28px;
+				background: linear-gradient(135deg, #ff6b6b, #ffa500);
+				color: white;
+				border: 2px solid rgba(255, 255, 255, 0.5);
+				border-radius: 50%;
+				cursor: pointer;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				transition: transform 0.2s, box-shadow 0.2s;
+				box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+			}
+			#throw-toy:hover {
+				transform: scale(1.1);
+				box-shadow: 0 6px 20px rgba(255, 107, 107, 0.6);
+			}
+			#throw-toy:active {
+				transform: scale(0.95);
+			}
+			#animation-controls {
+				position: absolute;
+				bottom: 20px;
+				right: 100px;
+				z-index: 2000;
+			}
+			#stop-anim-btn {
+				width: 60px;
+				height: 60px;
+				font-size: 24px;
+				background: linear-gradient(135deg, #ff6b6b, #ff4757);
+				color: white;
+				border: 2px solid rgba(255, 255, 255, 0.5);
+				border-radius: 50%;
+				cursor: pointer;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				transition: transform 0.2s, box-shadow 0.2s;
+				box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+			}
+			#stop-anim-btn:hover {
+				transform: scale(1.1);
+				box-shadow: 0 6px 20px rgba(255, 107, 107, 0.6);
+			}
+			#stop-anim-btn:active {
+				transform: scale(0.95);
+			}
+		</style>
+	</head>
+	<body>
+		<div id="container"></div>
+		<div id="info">
+			<a href="https://threejs.org" target="_blank" rel="noopener">three.js</a>
+		</div>
+
+		<div id="zoom-controls">
+			<button id="zoom-in" title="Zoom In">+</button>
+			<button id="zoom-out" title="Zoom Out">-</button>
+		</div>
+
+		<div id="toy-controls">
+			<button id="throw-toy" title="Throw Dog Toy">🎾</button>
+		</div>
+
+		<div id="animation-controls">
+			<button id="stop-anim-btn" title="Stop Playing Animation">🛑</button>
+		</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+					"three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three';
+
+			import Stats from 'three/addons/libs/stats.module.js';
+			import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+			import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+			import { DogToySystem } from './dog_toy.js';
+
+			let scene, renderer, camera, stats;
+			let dogToySystem;
+			let model, skeleton, mixer, clock;
+
+			// WebSocket texture streaming
+			let streamTexture, streamCanvas, streamCtx;
+			let ws;
+			let screenSpaceMaterial;
+
+			// Custom shader for screen-space texture mapping with skinning support
+			const screenSpaceVertexShader = `
+				#include <skinning_pars_vertex>
+				varying vec4 vScreenPos;
+				void main() {
+					#include <skinbase_vertex>
+					#include <begin_vertex>
+					#include <skinning_vertex>
+					vec4 mvPosition = modelViewMatrix * vec4(transformed, 1.0);
+					gl_Position = projectionMatrix * mvPosition;
+					// Pass the clip-space position to fragment shader
+					vScreenPos = gl_Position;
+				}
+			`;
+
+			const screenSpaceFragmentShader = `
+				uniform sampler2D uTexture;
+				uniform vec2 uBoundsMin;
+				uniform vec2 uBoundsMax;
+				varying vec4 vScreenPos;
+				void main() {
+					// Convert clip-space to normalized device coordinates (NDC)
+					vec2 screenUV = vScreenPos.xy / vScreenPos.w;
+					// Flip X and Y in NDC space before remapping
+					screenUV.x = screenUV.x;
+					//screenUV.y = -screenUV.y;
+					// Remap from bounding box range to [0, 1]
+					screenUV = (screenUV - uBoundsMin) / (uBoundsMax - uBoundsMin);
+					vec4 texColor = texture2D(uTexture, screenUV);
+					gl_FragColor = texColor;
+				}
+			`;
+
+			const crossFadeControls = [];
+
+			let currentBaseAction = 'None';
+			const allActions = [];
+			const baseActions = {};
+			const additiveActions = {};
+			let panelSettings, numAnimations;
+
+			init();
+			initWebSocket();
+
+			function initWebSocket() {
+				// Create an offscreen canvas for the texture
+				streamCanvas = document.createElement('canvas');
+				streamCanvas.width = 800;
+				streamCanvas.height = 600;
+				streamCtx = streamCanvas.getContext('2d');
+
+				// Create texture from canvas
+				streamTexture = new THREE.CanvasTexture(streamCanvas);
+				streamTexture.colorSpace = THREE.SRGBColorSpace;
+
+				const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+				const wsUrl = `${protocol}//${window.location.host}/ws`;
+
+				ws = new WebSocket(wsUrl);
+				ws.binaryType = 'arraybuffer';
+
+				ws.onopen = () => {
+					console.log('WebSocket connected for texture streaming');
+				};
+
+				ws.onclose = () => {
+					console.log('WebSocket disconnected - Reconnecting...');
+					setTimeout(initWebSocket, 2000);
+				};
+
+				ws.onerror = (error) => {
+					console.error('WebSocket error:', error);
+				};
+
+				ws.onmessage = (event) => {
+					const data = new DataView(event.data);
+
+					// Read header: width, height, stride (4 bytes each, little-endian)
+					const width = data.getUint32(0, true);
+					const height = data.getUint32(4, true);
+					const stride = data.getUint32(8, true);
+
+					// Resize canvas if needed
+					if (streamCanvas.width !== width || streamCanvas.height !== height) {
+						streamCanvas.width = width;
+						streamCanvas.height = height;
+					}
+
+					// Get pixel data (after 12-byte header)
+					const pixelData = new Uint8ClampedArray(event.data, 12);
+
+					// Create ImageData and draw to canvas
+					const imageData = new ImageData(pixelData, width, height);
+					streamCtx.putImageData(imageData, 0, 0);
+
+					// Mark texture as needing update
+					streamTexture.needsUpdate = true;
+
+					// Apply screen-space material to model if loaded
+					if (model) {
+						// Create the screen-space material once
+						if (!screenSpaceMaterial) {
+							screenSpaceMaterial = new THREE.ShaderMaterial({
+								uniforms: {
+									uTexture: { value: streamTexture },
+									uBoundsMin: { value: new THREE.Vector2(-1, -1) },
+									uBoundsMax: { value: new THREE.Vector2(1, 1) }
+								},
+								vertexShader: screenSpaceVertexShader,
+								fragmentShader: screenSpaceFragmentShader,
+								skinning: true
+							});
+						}
+
+						model.traverse((object) => {
+							if (object.isMesh) {
+								if (Array.isArray(object.material)) {
+									for (let i = 0; i < object.material.length; i++) {
+										const mat = object.material[i];
+										if (mat !== screenSpaceMaterial && mat.name !== 'Eyes') {
+											object.material[i] = screenSpaceMaterial;
+										}
+									}
+								} else if (object.material !== screenSpaceMaterial) {
+									if (object.material.name === 'Eyes') return;
+									object.material = screenSpaceMaterial;
+								}
+							}
+						});
+					}
+				};
+
+				// Set up keyboard forwarding to Chrome
+				setupKeyboardForwarding();
+			}
+
+			// Map JavaScript key codes to Linux evdev keycodes
+			const keyCodeToLinux = {
+				'Escape': 1,
+				'Digit1': 2, 'Digit2': 3, 'Digit3': 4, 'Digit4': 5, 'Digit5': 6,
+				'Digit6': 7, 'Digit7': 8, 'Digit8': 9, 'Digit9': 10, 'Digit0': 11,
+				'Minus': 12, 'Equal': 13, 'Backspace': 14, 'Tab': 15,
+				'KeyQ': 16, 'KeyW': 17, 'KeyE': 18, 'KeyR': 19, 'KeyT': 20,
+				'KeyY': 21, 'KeyU': 22, 'KeyI': 23, 'KeyO': 24, 'KeyP': 25,
+				'BracketLeft': 26, 'BracketRight': 27, 'Enter': 28, 'ControlLeft': 29,
+				'KeyA': 30, 'KeyS': 31, 'KeyD': 32, 'KeyF': 33, 'KeyG': 34,
+				'KeyH': 35, 'KeyJ': 36, 'KeyK': 37, 'KeyL': 38,
+				'Semicolon': 39, 'Quote': 40, 'Backquote': 41, 'ShiftLeft': 42,
+				'Backslash': 43,
+				'KeyZ': 44, 'KeyX': 45, 'KeyC': 46, 'KeyV': 47, 'KeyB': 48,
+				'KeyN': 49, 'KeyM': 50, 'Comma': 51, 'Period': 52, 'Slash': 53,
+				'ShiftRight': 54, 'AltLeft': 56, 'Space': 57, 'CapsLock': 58,
+				'F1': 59, 'F2': 60, 'F3': 61, 'F4': 62, 'F5': 63,
+				'F6': 64, 'F7': 65, 'F8': 66, 'F9': 67, 'F10': 68,
+				'F11': 87, 'F12': 88,
+				'ControlRight': 97, 'AltRight': 100,
+				'Home': 102, 'ArrowUp': 103, 'PageUp': 104,
+				'ArrowLeft': 105, 'ArrowRight': 106,
+				'End': 107, 'ArrowDown': 108, 'PageDown': 109,
+				'Insert': 110, 'Delete': 111
+			};
+
+			function sendKeyboardEvent(keycode, pressed) {
+				if (ws && ws.readyState === WebSocket.OPEN && keycode !== 0) {
+					// Format: [type:1byte][keycode:4bytes][pressed:1byte]
+					const buffer = new ArrayBuffer(6);
+					const view = new DataView(buffer);
+					view.setUint8(0, 1); // type: 1 = keyboard
+					view.setUint32(1, keycode, true); // little-endian
+					view.setUint8(5, pressed ? 1 : 0);
+					ws.send(buffer);
+				}
+			}
+
+			function playDeathAnimation() {
+				const targetName = 'Death_R';
+				// Set all base actions to 0
+				for (const name of Object.keys(baseActions)) {
+					const settings = baseActions[name];
+					setWeight(settings.action, 0.0);
+					settings.weight = 0.0;
+				}
+				currentBaseAction = 'None';
+
+				// Set all additive actions to 0, except Death_R
+				let found = false;
+				for (const name of Object.keys(additiveActions)) {
+					const settings = additiveActions[name];
+					let weight = 0.0;
+					if (name === targetName) {
+						weight = 1.0;
+						found = true;
+					}
+					setWeight(settings.action, weight);
+					settings.weight = weight;
+					if (panelSettings) {
+						panelSettings[name] = weight;
+					}
+				}
+
+				// If Death_R was actually a base action
+				if (!found && baseActions[targetName]) {
+					const settings = baseActions[targetName];
+					setWeight(settings.action, 1.0);
+					settings.weight = 1.0;
+					currentBaseAction = targetName;
+				}
+
+				// Update crossfade controls
+				crossFadeControls.forEach(function (control) {
+					const name = control.property;
+					if (name === currentBaseAction) {
+						control.setActive();
+					} else {
+						control.setInactive();
+					}
+				});
+			}
+
+			function playRandomAdditiveAnimation() {
+				const additiveNames = Object.keys(additiveActions);
+				if (additiveNames.length === 0) return;
+
+				const randomName = additiveNames[Math.floor(Math.random() * additiveNames.length)];
+
+				for (const name of additiveNames) {
+					const settings = additiveActions[name];
+					const weight = (name === randomName) ? 1.0 : 0.0;
+
+					settings.weight = weight;
+					setWeight(settings.action, weight);
+
+					if (panelSettings) {
+						panelSettings[name] = weight;
+					}
+				}
+			}
+
+			function handleKeyEvent(event, pressed) {
+				const keycode = keyCodeToLinux[event.code];
+				if (keycode !== undefined) {
+					event.preventDefault();
+					event.stopPropagation();
+
+					// Handle animation on keydown
+					if (pressed) {
+						if (event.code === 'KeyD') {
+							playDeathAnimation();
+						} else if (event.code === 'KeyS') {
+							stopAllAnimations();
+						} else if (event.code === 'KeyW') {
+							playRandomAdditiveAnimation();
+						}
+					}
+
+					sendKeyboardEvent(keycode, pressed);
+				}
+			}
+
+			function setupKeyboardForwarding() {
+				// Use capture phase to intercept events before Three.js/OrbitControls
+				document.addEventListener('keydown', (e) => handleKeyEvent(e, true), true);
+				document.addEventListener('keyup', (e) => handleKeyEvent(e, false), true);
+			}
+
+			function init() {
+
+				const container = document.getElementById( 'container' );
+				clock = new THREE.Clock();
+
+				scene = new THREE.Scene();
+				scene.background = new THREE.Color( 0xa0a0a0 );
+				scene.fog = new THREE.Fog( 0xa0a0a0, 10, 50 );
+
+				// Initialize dog toy system
+				dogToySystem = new DogToySystem(scene);
+
+				const hemiLight = new THREE.HemisphereLight( 0xffffff, 0x8d8d8d, 3 );
+				hemiLight.position.set( 0, 20, 0 );
+				scene.add( hemiLight );
+
+				const dirLight = new THREE.DirectionalLight( 0xffffff, 3 );
+				dirLight.position.set( 3, 10, 10 );
+				dirLight.castShadow = true;
+				dirLight.shadow.camera.top = 2;
+				dirLight.shadow.camera.bottom = - 2;
+				dirLight.shadow.camera.left = - 2;
+				dirLight.shadow.camera.right = 2;
+				dirLight.shadow.camera.near = 0.1;
+				dirLight.shadow.camera.far = 40;
+				scene.add( dirLight );
+
+				// ground
+
+				const mesh = new THREE.Mesh( new THREE.PlaneGeometry( 100, 100 ), new THREE.MeshPhongMaterial( { color: 0xcbcbcb, depthWrite: false } ) );
+				mesh.rotation.x = - Math.PI / 2;
+				mesh.receiveShadow = true;
+				scene.add( mesh );
+
+				const loader = new GLTFLoader();
+				loader.load( './export.glb', function ( gltf ) {
+
+					model = gltf.scene;
+					scene.add( model );
+
+					model.traverse( function ( object ) {
+
+						if ( object.isMesh ) object.castShadow = true;
+
+					} );
+
+					skeleton = new THREE.SkeletonHelper( model );
+					skeleton.visible = false;
+					scene.add( skeleton );
+
+					const animations = gltf.animations;
+					mixer = new THREE.AnimationMixer( model );
+
+					numAnimations = animations.length;
+
+					// Dynamic population of actions
+					if ( numAnimations > 0 ) {
+						let baseClipIndex = 0;
+						const idleClipIndex = animations.findIndex(a => a.name === 'Idle_1');
+
+						if (idleClipIndex !== -1) {
+							baseClipIndex = idleClipIndex;
+						}
+
+						// Assign base action (Idle_1 if found, otherwise first animation)
+						const baseClip = animations[baseClipIndex];
+						baseActions[baseClip.name] = { weight: 1 };
+						currentBaseAction = baseClip.name;
+
+						// Assign remaining animations as additive actions
+						for ( let i = 0; i < numAnimations; ++ i ) {
+							if (i === baseClipIndex) continue;
+							const clip = animations[i];
+							additiveActions[clip.name] = { weight: 0 };
+						}
+					}
+
+					for ( let i = 0; i !== numAnimations; ++ i ) {
+
+						let clip = animations[ i ];
+						const name = clip.name;
+
+						if ( baseActions[ name ] ) {
+
+							const action = mixer.clipAction( clip );
+							activateAction( action );
+							baseActions[ name ].action = action;
+							allActions.push( action );
+
+						} else if ( additiveActions[ name ] ) {
+
+							// Make the clip additive and remove the reference frame
+
+							THREE.AnimationUtils.makeClipAdditive( clip );
+
+							const action = mixer.clipAction( clip );
+							activateAction( action );
+							additiveActions[ name ].action = action;
+							allActions.push( action );
+
+						}
+
+					}
+
+					createPanel();
+
+					renderer.setAnimationLoop( animate );
+
+				}, undefined, function ( error ) {
+
+					console.error( error );
+					// Alert user if model fails to load (likely missing export.glb)
+					const info = document.getElementById('info');
+					info.innerHTML += '<br><span style="color:red">Error loading export.glb. Make sure the file exists in the same directory.</span>';
+
+				} );
+
+				renderer = new THREE.WebGLRenderer( { antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.shadowMap.enabled = true;
+				container.appendChild( renderer.domElement );
+
+				// camera
+				camera = new THREE.PerspectiveCamera( 45, window.innerWidth / window.innerHeight, 0.1, 100 );
+				camera.position.set( - 1, 2, 3 );
+
+				const controls = new OrbitControls( camera, renderer.domElement );
+				controls.enablePan = false;
+				controls.enableZoom = true;
+				controls.target.set( 0, 0.25, 0 );
+				controls.update();
+
+				stats = new Stats();
+				container.appendChild( stats.dom );
+
+				window.addEventListener( 'resize', onWindowResize );
+
+				setupZoomControls();
+				setupDogToyControls();
+				setupAnimationControls();
+
+			}
+
+			function createPanel() {
+
+				const panel = new GUI( { width: 310 } );
+
+				const folder1 = panel.addFolder( 'Base Actions' );
+				const folder2 = panel.addFolder( 'Additive Action Weights' );
+				const folder3 = panel.addFolder( 'General Speed' );
+				const folder4 = panel.addFolder( 'Settings' );
+
+				panelSettings = {
+					'modify time scale': 1.0,
+					'use shake mode': true
+				};
+
+				folder4.add( panelSettings, 'use shake mode' );
+				folder4.open();
+
+				const baseNames = [ 'None', ...Object.keys( baseActions ) ];
+
+				for ( let i = 0, l = baseNames.length; i !== l; ++ i ) {
+
+					const name = baseNames[ i ];
+					const settings = baseActions[ name ];
+					panelSettings[ name ] = function () {
+
+						const currentSettings = baseActions[ currentBaseAction ];
+						const currentAction = currentSettings ? currentSettings.action : null;
+						const action = settings ? settings.action : null;
+
+						if ( currentAction !== action ) {
+
+							prepareCrossFade( currentAction, action, 0.35 );
+
+						}
+
+					};
+
+					crossFadeControls.push( folder1.add( panelSettings, name ) );
+
+				}
+
+				for ( const name of Object.keys( additiveActions ) ) {
+
+					const settings = additiveActions[ name ];
+
+					panelSettings[ name ] = settings.weight;
+					folder2.add( panelSettings, name, 0.0, 1.0, 0.01 ).listen().onChange( function ( weight ) {
+
+						setWeight( settings.action, weight );
+						settings.weight = weight;
+
+					} );
+
+				}
+
+				folder3.add( panelSettings, 'modify time scale', 0.0, 1.5, 0.01 ).onChange( modifyTimeScale );
+
+				folder1.open();
+				folder2.open();
+				folder3.open();
+
+				crossFadeControls.forEach( function ( control ) {
+
+					control.setInactive = function () {
+
+						control.domElement.classList.add( 'control-inactive' );
+
+					};
+
+					control.setActive = function () {
+
+						control.domElement.classList.remove( 'control-inactive' );
+
+					};
+
+					const settings = baseActions[ control.property ];
+
+					if ( ! settings || ! settings.weight ) {
+
+						control.setInactive();
+
+					}
+
+				} );
+
+			}
+
+			function activateAction( action ) {
+
+				const clip = action.getClip();
+				const settings = baseActions[ clip.name ] || additiveActions[ clip.name ];
+				setWeight( action, settings.weight );
+				action.play();
+
+			}
+
+			function modifyTimeScale( speed ) {
+
+				mixer.timeScale = speed;
+
+			}
+
+			function prepareCrossFade( startAction, endAction, duration ) {
+
+				// If the current action is 'idle', execute the crossfade immediately;
+				// else wait until the current action has finished its current loop
+
+				if ( currentBaseAction === 'idle' || ! startAction || ! endAction ) {
+
+					executeCrossFade( startAction, endAction, duration );
+
+				} else {
+
+					synchronizeCrossFade( startAction, endAction, duration );
+
+				}
+
+				// Update control colors
+
+				if ( endAction ) {
+
+					const clip = endAction.getClip();
+					currentBaseAction = clip.name;
+
+				} else {
+
+					currentBaseAction = 'None';
+
+				}
+
+				crossFadeControls.forEach( function ( control ) {
+
+					const name = control.property;
+
+					if ( name === currentBaseAction ) {
+
+						control.setActive();
+
+					} else {
+
+						control.setInactive();
+
+					}
+
+				} );
+
+			}
+
+			function synchronizeCrossFade( startAction, endAction, duration ) {
+
+				mixer.addEventListener( 'loop', onLoopFinished );
+
+				function onLoopFinished( event ) {
+
+					if ( event.action === startAction ) {
+
+						mixer.removeEventListener( 'loop', onLoopFinished );
+
+						executeCrossFade( startAction, endAction, duration );
+
+					}
+
+				}
+
+			}
+
+			function executeCrossFade( startAction, endAction, duration ) {
+
+				// Not only the start action, but also the end action must get a weight of 1 before fading
+				// (concerning the start action this is already guaranteed in this place)
+
+				if ( endAction ) {
+
+					setWeight( endAction, 1 );
+					endAction.time = 0;
+
+					if ( startAction ) {
+
+						// Crossfade with warping
+
+						startAction.crossFadeTo( endAction, duration, true );
+
+					} else {
+
+						// Fade in
+
+						endAction.fadeIn( duration );
+
+					}
+
+				} else {
+
+					// Fade out
+
+					startAction.fadeOut( duration );
+
+				}
+
+			}
+
+			// This function is needed, since animationAction.crossFadeTo() disables its start action and sets
+			// the start action's timeScale to ((start animation's duration) / (end animation's duration))
+
+			function setWeight( action, weight ) {
+
+				action.enabled = true;
+				action.setEffectiveTimeScale( 1 );
+				action.setEffectiveWeight( weight );
+
+			}
+
+			function setupZoomControls() {
+				const zoomInBtn = document.getElementById('zoom-in');
+				const zoomOutBtn = document.getElementById('zoom-out');
+
+				if (zoomInBtn && zoomOutBtn) {
+					zoomInBtn.addEventListener('click', () => zoomCamera(0.8));
+					zoomOutBtn.addEventListener('click', () => zoomCamera(1.2));
+				}
+			}
+
+			function setupDogToyControls() {
+				const throwToyBtn = document.getElementById('throw-toy');
+				if (throwToyBtn) {
+					throwToyBtn.addEventListener('click', () => {
+						if (dogToySystem && camera) {
+							// Drop toy from above the puppy (assumed at origin), height 10
+							dogToySystem.dropToy(new THREE.Vector3(0, 10, 0));
+						}
+					});
+				}
+			}
+
+			function setupAnimationControls() {
+				const stopBtn = document.getElementById('stop-anim-btn');
+				if (stopBtn) {
+					stopBtn.addEventListener('click', stopAllAnimations);
+				}
+			}
+
+			function stopAllAnimations() {
+				const targetName = 'Idle_1';
+				let foundAsBase = false;
+
+				// Handle Base Actions
+				for (const name of Object.keys(baseActions)) {
+					const settings = baseActions[name];
+					const action = settings.action;
+					if (name === targetName) {
+						setWeight(action, 1.0);
+						settings.weight = 1.0;
+						currentBaseAction = name;
+						foundAsBase = true;
+					} else {
+						setWeight(action, 0.0);
+						settings.weight = 0.0;
+					}
+				}
+
+				if (!foundAsBase) {
+					currentBaseAction = 'None';
+				}
+
+				// Update crossfade controls
+				crossFadeControls.forEach(function (control) {
+					const name = control.property;
+					if (name === currentBaseAction) {
+						control.setActive();
+					} else {
+						control.setInactive();
+					}
+				});
+
+				// Handle Additive Actions
+				for (const name of Object.keys(additiveActions)) {
+					const settings = additiveActions[name];
+					const action = settings.action;
+
+					let weight = 0.0;
+					if (name === targetName) {
+						weight = 1.0;
+					}
+
+					setWeight(action, weight);
+					settings.weight = weight;
+
+					if (panelSettings) {
+						panelSettings[name] = weight;
+					}
+				}
+			}
+
+			function zoomCamera(factor) {
+				if (!camera || !controls) return;
+
+				const direction = new THREE.Vector3().copy(camera.position).sub(controls.target);
+				const length = direction.length();
+
+				// Calculate new distance
+				const newDistance = length * factor;
+
+				direction.normalize().multiplyScalar(newDistance);
+				camera.position.copy(controls.target).add(direction);
+
+				controls.update();
+			}
+
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+
+			function animate() {
+
+				// Render loop
+
+				for ( let i = 0; i !== numAnimations; ++ i ) {
+
+					const action = allActions[ i ];
+					const clip = action.getClip();
+					const settings = baseActions[ clip.name ] || additiveActions[ clip.name ];
+					settings.weight = action.getEffectiveWeight();
+
+				}
+
+				// Get the time elapsed since the last frame, used for mixer update
+
+				const mixerUpdateDelta = clock.getDelta();
+
+				// Update the animation mixer, the stats panel, and render this frame
+
+				mixer.update( mixerUpdateDelta );
+
+				// Update dog toy physics
+				if (dogToySystem) {
+					dogToySystem.update(mixerUpdateDelta);
+				}
+
+				// Update screen-space bounding box for texture mapping
+				if (model && screenSpaceMaterial) {
+					const box = new THREE.Box3().setFromObject(model);
+					const corners = [
+						new THREE.Vector3(box.min.x, box.min.y, box.min.z),
+						new THREE.Vector3(box.min.x, box.min.y, box.max.z),
+						new THREE.Vector3(box.min.x, box.max.y, box.min.z),
+						new THREE.Vector3(box.min.x, box.max.y, box.max.z),
+						new THREE.Vector3(box.max.x, box.min.y, box.min.z),
+						new THREE.Vector3(box.max.x, box.min.y, box.max.z),
+						new THREE.Vector3(box.max.x, box.max.y, box.min.z),
+						new THREE.Vector3(box.max.x, box.max.y, box.max.z)
+					];
+
+					let minX = Infinity, minY = Infinity;
+					let maxX = -Infinity, maxY = -Infinity;
+
+					for (const corner of corners) {
+						// Project corner to clip space
+						const projected = corner.clone().project(camera);
+						minX = Math.min(minX, projected.x);
+						minY = Math.min(minY, projected.y);
+						maxX = Math.max(maxX, projected.x);
+						maxY = Math.max(maxY, projected.y);
+					}
+
+					screenSpaceMaterial.uniforms.uBoundsMin.value.set(minX, minY);
+					screenSpaceMaterial.uniforms.uBoundsMax.value.set(maxX, maxY);
+				}
+
+				renderer.render( scene, camera );
+
+				stats.update();
+
+			}
+
+		</script>
+
+	</body>
+</html>

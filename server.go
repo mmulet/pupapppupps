@@ -10,19 +10,24 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// KeyboardEventHandler is a callback for handling keyboard events from WebSocket clients
+type KeyboardEventHandler func(keycode uint32, pressed bool)
+
 // WebSocketServer manages WebSocket connections for streaming the desktop buffer
 type WebSocketServer struct {
-	clients   map[*websocket.Conn]bool
-	mu        sync.RWMutex
-	upgrader  websocket.Upgrader
-	broadcast chan []byte
+	clients         map[*websocket.Conn]bool
+	mu              sync.RWMutex
+	upgrader        websocket.Upgrader
+	broadcast       chan []byte
+	keyboardHandler KeyboardEventHandler
 }
 
 // NewWebSocketServer creates a new WebSocket server instance
 func NewWebSocketServer() *WebSocketServer {
 	return &WebSocketServer{
-		clients:   make(map[*websocket.Conn]bool),
-		broadcast: make(chan []byte, 10),
+		clients:         make(map[*websocket.Conn]bool),
+		broadcast:       make(chan []byte, 10),
+		keyboardHandler: nil,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024 * 1024, // Large buffer for image data
@@ -31,6 +36,11 @@ func NewWebSocketServer() *WebSocketServer {
 			},
 		},
 	}
+}
+
+// SetKeyboardHandler sets the callback for keyboard events
+func (s *WebSocketServer) SetKeyboardHandler(handler KeyboardEventHandler) {
+	s.keyboardHandler = handler
 }
 
 // HandleWebSocket handles incoming WebSocket connections
@@ -47,7 +57,7 @@ func (s *WebSocketServer) HandleWebSocket(w http.ResponseWriter, r *http.Request
 
 	log.Printf("New WebSocket client connected. Total clients: %d", len(s.clients))
 
-	// Keep connection alive and handle disconnects
+	// Keep connection alive and handle disconnects and incoming messages
 	go func() {
 		defer func() {
 			s.mu.Lock()
@@ -58,9 +68,21 @@ func (s *WebSocketServer) HandleWebSocket(w http.ResponseWriter, r *http.Request
 		}()
 
 		for {
-			_, _, err := conn.ReadMessage()
+			messageType, message, err := conn.ReadMessage()
 			if err != nil {
 				break
+			}
+
+			// Handle keyboard input messages
+			// Format: [type:1byte][keycode:4bytes][pressed:1byte]
+			// type: 1 = keyboard
+			if messageType == websocket.BinaryMessage && len(message) >= 6 {
+				msgType := message[0]
+				if msgType == 1 && s.keyboardHandler != nil { // Keyboard message
+					keycode := binary.LittleEndian.Uint32(message[1:5])
+					pressed := message[5] != 0
+					s.keyboardHandler(keycode, pressed)
+				}
 			}
 		}
 	}()
@@ -173,4 +195,9 @@ func (h *HTTPServer) BroadcastDesktopBuffer(buffer []byte, width, height, stride
 // WebSocketClientCount returns the number of connected WebSocket clients
 func (h *HTTPServer) WebSocketClientCount() int {
 	return h.wsServer.ClientCount()
+}
+
+// SetKeyboardHandler sets the callback for keyboard events received from WebSocket clients
+func (h *HTTPServer) SetKeyboardHandler(handler KeyboardEventHandler) {
+	h.wsServer.SetKeyboardHandler(handler)
 }

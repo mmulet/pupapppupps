@@ -142,6 +142,16 @@ func main() {
 	var clients []*wayland.Client
 	var mu sync.Mutex
 
+	// Set up keyboard handler for WebSocket input
+	httpServer.SetKeyboardHandler(func(keycode uint32, pressed bool) {
+		mu.Lock()
+		activeClients := clients
+		mu.Unlock()
+		if keycode != 0 {
+			wayland.SendKeyboardKey(activeClients, keycode, pressed)
+		}
+	})
+
 	// Handle frame callbacks to know when clients want to redraw.
 	handleFrameRequests := func(client *wayland.Client) {
 		for callbackID := range client.FrameDrawRequests {
